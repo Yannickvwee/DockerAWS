@@ -1,0 +1,137 @@
+
+
+CreateDockerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+        Monitoring: true
+        KeyName: !Ref SSHkey
+        ImageId:  ami-0bcc094591f354be2
+        InstanceType: t2.micro
+        Tags:
+          - Key: Name
+            Value: MongoDB
+        SecurityGroupIds:
+        - !Ref DatabaseSG
+        SubnetId:
+            Fn::ImportValue:
+                Fn::Sub:
+                - ${VPCStack}:FirstSubnet
+                - VPCStack: !Ref VPCStack
+        UserData:
+            Fn::Base64: !Sub |
+                  - #!bin/bash
+                    apt-get -y update
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+                    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+                    apt-get -y update
+                    apt-get -y install docker-ce docker-ce-cli containerd.io
+                    mkdir nginxdocker
+                    cd nginxdocker
+                    docker pull ubuntu:latest 
+                    docker run -it --name coviddashboard ubuntu:latest
+                    apt-get -y update
+                    add-apt-repository -y ppa:deadsnakes/ppa
+                    apt-get install -y git python3-pip software-properties-common python3.8
+                    apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev wget
+                    apt-get install -y nginx php-mysql php-pdo php-ldap php-fpm php-pear php-curl php-dev php-gd php-mbstring php-zip php-xml
+                    systemctl enable nginx
+                    mkdir /git
+                    git clone https://github.com/broadinstitute/covid19-testing.git master
+                    cp -r ./master /var/www/html
+                    mv /var/www/html/master /var/www/html/COVIDdashboard
+                    cd /var/www/html/COVIDdashboard
+                    exit 
+                    docker commit -m "trying to push" -a "yannickvw" coviddashboard yannickvw/nginx-covid19-dashboard-project:coviddashboard
+                    docker login -u ${uname} -p ${pw}
+                    docker push yannickvw/nginx-covid19-dashboard-project:coviddashboard
+                  - uname: !Ref uname
+                    pw: !Ref pw
+
+
+CreateDockerbetteruseofdockerfileInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+        Monitoring: true
+        KeyName: !Ref SSHkey
+        ImageId:  ami-0bcc094591f354be2
+        InstanceType: t2.micro
+        Tags:
+            - Key: Name
+            Value: MongoDB
+        SecurityGroupIds:
+        - !Ref DatabaseSG
+        SubnetId:
+            Fn::ImportValue:
+                Fn::Sub:
+                - ${VPCStack}:FirstSubnet
+                - VPCStack: !Ref VPCStack
+        UserData:
+            Fn::Base64: !Sub |
+                  - #!bin/bash
+                    apt-get -y update
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+                    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+                    apt-get -y update
+                    apt-get -y install docker-ce docker-ce-cli containerd.io
+                    mkdir nginxdocker
+                    cd nginxdocker
+                    docker pull ubuntu:latest 
+                    docker run -it --name coviddashboard ubuntu:latest
+                    apt-get -y update
+                    add-apt-repository -y ppa:deadsnakes/ppa
+                    apt-get install -y git python3-pip software-properties-common python3.8
+                    apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev wget
+                    apt-get install -y nginx php-mysql php-pdo php-ldap php-fpm php-pear php-curl php-dev php-gd php-mbstring php-zip php-xml
+                    systemctl enable nginx
+                    exit 
+                    docker commit -m "trying to push" -a "yannickvw" nginxwebsrv yannickvw/nginx-covid19-dashboard-project:nginxwebsrv
+                    docker login -u ${uname} -p ${pw}
+                    docker push yannickvw/nginx-covid19-dashboard-project:nginxwebsrv
+                  - uname: !Ref uname
+                    pw: !Ref pw
+
+instancepullingdockerwithdockerfile:
+    Type: AWS::EC2::Instance
+    Properties:
+        Monitoring: true
+        KeyName: !Ref SSHkey
+        ImageId:  ami-0bcc094591f354be2
+        InstanceType: t2.micro
+        Tags:
+            - Key: Name
+            Value: MongoDB
+        SecurityGroupIds:
+        - !Ref DatabaseSG
+        SubnetId:
+            Fn::ImportValue:
+                Fn::Sub:
+                - ${VPCStack}:FirstSubnet
+                - VPCStack: !Ref VPCStack
+        UserData:
+            Fn::Base64: !Sub |
+                    - #!bin/bash
+                    apt-get -y update
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+                    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+                    apt-get -y update
+                    apt-get -y install docker-ce docker-ce-cli containerd.io
+                    mkdir nginxdocker
+                    cd nginxdocker
+                    docker pull ubuntu:latest 
+                    docker run -it --name coviddashboard ubuntu:latest
+                    apt-get -y update
+                    add-apt-repository -y ppa:deadsnakes/ppa
+                    apt-get install -y git python3-pip software-properties-common python3.8
+                    apt-get install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev wget
+                    apt-get install -y nginx php-mysql php-pdo php-ldap php-fpm php-pear php-curl php-dev php-gd php-mbstring php-zip php-xml
+                    systemctl enable nginx
+                    exit 
+                    docker commit -m "trying to push" -a "yannickvw" nginxwebsrv yannickvw/nginx-covid19-dashboard-project:nginxwebsrv
+                    docker login -u ${uname} -p ${pw}
+                    docker push yannickvw/nginx-covid19-dashboard-project:nginxwebsrv
+                    - uname: !Ref uname
+                    pw: !Ref pw
+
+
+
+
