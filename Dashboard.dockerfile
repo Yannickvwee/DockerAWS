@@ -4,11 +4,12 @@
 FROM nginx:latest
 COPY ./master /usr/share/nginx/html/COVIDdashboard
 RUN service nginx start
+EXPOSE 80
 # RUN apt-get -y update
 # RUN apt-get -y install mongo-tools mongodb-clients
 # RUN grep -oP '(?<=data =).*?(?=;)' index.html > data.json
 # RUN mongoimport -u ${dbuname} -p ${dbpw} --host ${dbserver.privateip} --port 27017 --db COVIDDashboard --collection inventory --authenticationDatabase admin --drop --file ./data.json --jsonArray
-EXPOSE 80
+
 
 #docker run -it --rm -d -p 0.0.0.0:80:80 --net shared_nw --ip 10.0.1.200 --name amezing amezing
 #apt -y install software-properties-common dirmngr apt-transport-https lsb-release ca-certificates

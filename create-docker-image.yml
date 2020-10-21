@@ -1,71 +1,107 @@
+Paramaters:
+  SSHkey:
+    Description: Select used keypair
+    Type: AWS::EC2::KeyPair::KeyName
+
+  VPCStack:
+    Description: Name of the VPCStack used.
+    Type: String
+    Default: VPCStack
+
+  EFSStack:
+    Description: Name of the EFS Stack.
+    Type: String
+    Default: EFSStack
+
+Resources:
 
 
-CreateDockerInstance:
-    Type: AWS::EC2::Instance
+  DockerManagerSG:
+    Type: AWS::EC2::SecurityGroup
     Properties:
-        Monitoring: true
-        KeyName: !Ref SSHkey
-        ImageId:  ami-0bcc094591f354be2
-        InstanceType: t2.micro
-        Tags:
-          - Key: Name
-            Value: MongoDB
-        SecurityGroupIds:
-        - !Ref DatabaseSG
-        SubnetId:
+        GroupDescription: DockerManagerSG
+        GroupName: !Join [ "-", [ !Ref "AWS::StackName", DMSG ] ]
+        SecurityGroupEgress:
+          - CidrIp: 0.0.0.0/0
+            Description: all outbound traffic OK
+            FromPort: -1
+            IpProtocol: -1
+            ToPort: -1
+        SecurityGroupIngress:
+          - CidrIp: 0.0.0.0/0
+            Description: ssh
+            FromPort: 22
+            IpProtocol: tcp
+            ToPort: 22
+          - CidrIp: 0.0.0.0/0
+            Description: nginx
+            FromPort: 80
+            IpProtocol: tcp
+            ToPort: 80
+          - CidrIp: 0.0.0.0/0
+            Description: netapp
+            FromPort: 5000
+            IpProtocol: tcp
+            ToPort: 5000
+          - CidrIp: 0.0.0.0/0
+            Description: portainer
+            FromPort: 9000
+            IpProtocol: -1
+            ToPort: 9000
+          - CidrIp: 0.0.0.0/0
+            Description: portainer2
+            FromPort: 8000
+            IpProtocol: -1
+            ToPort: 8000
+        VpcId:
             Fn::ImportValue:
                 Fn::Sub:
-                - ${VPCStack}:FirstSubnet
-                - VPCStack: !Ref VPCStack
-        UserData:
-            Fn::Base64: !Sub |
-                  - #!bin/bash
-                    apt-get -y update
-                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-                    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-                    apt-get -y update
-                    apt-get -y install docker-ce docker-ce-cli containerd.io docker-compose git
+                    - ${VPCStack}:VPC
+                    - VPCStack: !Ref VPCStack
 
-                    mkdir /tmp/efs-utils
-                    cd /tmp/efs-utils
-                    git clone https://github.com/aws/efs-utils
-                    cd efs-utils
-                    sudo apt-get -y install binutils
-                    ./build-deb.sh
-                    sudo apt-get -y install ./build/amazon-efs-utils*deb
-                    mkdir /EFS
-                    sudo mount -t efs ${EFS}:/ /EFS
-                     
-                    mkdir docker
-                    cd docker
-                    docker swarm init
-                    docker swarm join-token manager -q > /EFS/swarmtoken
-                    https://github.com/broadinstitute/covid19-testing.git master
-
-                    touch ./Dockerfile
-                    cat << EOF > ./Dockerfile
-                    FROM nginx:latest
-                    COPY ./master /usr/share/nginx/html/COVIDdashboard
-                    RUN service nginx start
-                    EXPOSE 80
-                    EOF
-                    mkdir ./netapp/master
-                    git clone https://github.com/looking4ward/nhs-cac-docker-dotnetwebapp.git ./netapp/master
-                    cat << EOF > ./docker-compose.yml
-                    version: "3.3"
-                    services:
-                      nginx:
-                        build:
-                          context: .
-                        ports:
-                          - "80:80"
-                      netapp:
-                        build:
-                          context: ./netapp/master
-                        ports:
-                          - "5000:80"
-                    EOF
-                    docker-compose build
+  CreateDockerInstance:
+      Type: AWS::EC2::Instance
+      Properties:
+          Monitoring: true
+          KeyName: !Ref SSHkey
+          ImageId:  ami-0bcc094591f354be2
+          InstanceType: t2.micro
+          Tags:
+            - Key: Name
+              Value: Dockerbuilder01
+          SecurityGroupIds:
+          - !Ref DockerManagerSG
+          SubnetId:
+              Fn::ImportValue:
+                  Fn::Sub:
+                  - ${VPCStack}:FirstSubnet
+                  - VPCStack: !Ref VPCStack
+          UserData:
+              Fn::Base64: !Sub |
+                    - #!bin/bash
+                      apt-get -y update
+                      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+                      add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+                      apt-get -y update
+                      apt-get -y install docker-ce docker-ce-cli containerd.io docker-compose git
+                      mkdir /tmp/efs-utils
+                      cd /tmp/efs-utils
+                      git clone https://github.com/aws/efs-utils
+                      cd efs-utils
+                      sudo apt-get -y install binutils
+                      ./build-deb.sh
+                      sudo apt-get -y install ./build/amazon-efs-utils*deb
+                      mkdir /EFS
+                      sudo mount -t efs ${EFS}:/ /EFS
+                      
+                      mkdir docker
+                      cd docker
+                      git clone https://github.com/Yannickvwee/dockerdeploy-coviddashboard.git
+                      docker volume create portainer_data
+                      docker run -d -p 8000:8000 -p 9000:9000 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
+                      docker-compose build
+                      docker-compose up
+                        
 
 
 
