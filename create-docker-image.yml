@@ -1,4 +1,4 @@
-Paramaters:
+Parameters:
   SSHkey:
     Description: Select used keypair
     Type: AWS::EC2::KeyPair::KeyName
@@ -15,49 +15,48 @@ Paramaters:
 
 Resources:
 
-
   DockerManagerSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
-        GroupDescription: DockerManagerSG
-        GroupName: !Join [ "-", [ !Ref "AWS::StackName", DMSG ] ]
-        SecurityGroupEgress:
-          - CidrIp: 0.0.0.0/0
-            Description: all outbound traffic OK
-            FromPort: -1
-            IpProtocol: -1
-            ToPort: -1
-        SecurityGroupIngress:
-          - CidrIp: 0.0.0.0/0
-            Description: ssh
-            FromPort: 22
-            IpProtocol: tcp
-            ToPort: 22
-          - CidrIp: 0.0.0.0/0
-            Description: nginx
-            FromPort: 80
-            IpProtocol: tcp
-            ToPort: 80
-          - CidrIp: 0.0.0.0/0
-            Description: netapp
-            FromPort: 5000
-            IpProtocol: tcp
-            ToPort: 5000
-          - CidrIp: 0.0.0.0/0
-            Description: portainer
-            FromPort: 9000
-            IpProtocol: -1
-            ToPort: 9000
-          - CidrIp: 0.0.0.0/0
-            Description: portainer2
-            FromPort: 8000
-            IpProtocol: -1
-            ToPort: 8000
-        VpcId:
-            Fn::ImportValue:
-                Fn::Sub:
-                    - ${VPCStack}:VPC
-                    - VPCStack: !Ref VPCStack
+      GroupDescription: DockerManagerSG
+      GroupName: !Join [ "-", [ !Ref "AWS::StackName", DMSG ] ]
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: all outbound traffic OK
+          FromPort: -1
+          IpProtocol: -1
+          ToPort: -1
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          Description: ssh
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+        - CidrIp: 0.0.0.0/0
+          Description: nginx
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+        - CidrIp: 0.0.0.0/0
+          Description: netapp
+          FromPort: 5000
+          IpProtocol: tcp
+          ToPort: 5000
+        - CidrIp: 0.0.0.0/0
+          Description: portainer
+          FromPort: 9000
+          IpProtocol: -1
+          ToPort: 9000
+        - CidrIp: 0.0.0.0/0
+          Description: portainer2
+          FromPort: 8000
+          IpProtocol: -1
+          ToPort: 8000
+      VpcId:
+        Fn::ImportValue: 
+            Fn::Sub:
+              - ${VPCStack}:VPC
+              - VPCStack: !Ref VPCStack
 
   CreateDockerInstance:
       Type: AWS::EC2::Instance
@@ -74,11 +73,13 @@ Resources:
           SubnetId:
               Fn::ImportValue:
                   Fn::Sub:
-                  - ${VPCStack}:FirstSubnet
-                  - VPCStack: !Ref VPCStack
+                    - ${VPCStack}:FirstSubnet
+                    - VPCStack: !Ref VPCStack
           UserData:
-              Fn::Base64: !Sub |
-                    - #!bin/bash
+            Fn::Base64:
+              Fn::Sub:
+                  - |
+                      #!bin/bash
                       apt-get -y update
                       curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
                       add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
@@ -91,16 +92,24 @@ Resources:
                       sudo apt-get -y install binutils
                       ./build-deb.sh
                       sudo apt-get -y install ./build/amazon-efs-utils*deb
-                      mkdir /EFS
-                      sudo mount -t efs ${EFS}:/ /EFS
+                      mkdir /home/EFS
+                      sudo mount -t efs ${EFS}:/ /home/EFS
                       
-                      mkdir docker
-                      cd docker
+                      mkdir /home/docker
+                      cd /home/docker
                       git clone https://github.com/Yannickvwee/dockerdeploy-coviddashboard.git
+                      sh swarmmanager.sh /home/EFS
                       docker volume create portainer_data
                       docker run -d -p 8000:8000 -p 9000:9000 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
                       docker-compose build
                       docker-compose up
+                  - EFS:
+                      Fn::ImportValue:
+                          Fn::Sub:
+                              - ${EFSStack}:EFS
+                              - EFSStack: !Ref EFSStack
+
+
                         
 
 
