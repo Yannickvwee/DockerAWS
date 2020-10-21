@@ -52,13 +52,18 @@ Resources:
           FromPort: 8000
           IpProtocol: -1
           ToPort: 8000
+        - CidrIp: 0.0.0.0/0
+          Description: swarm
+          FromPort: 2377
+          IpProtocol: -1
+          ToPort: 2377
       VpcId:
         Fn::ImportValue: 
             Fn::Sub:
               - ${VPCStack}:VPC
               - VPCStack: !Ref VPCStack
 
-  CreateDockerInstance:
+  MasterInstance:
       Type: AWS::EC2::Instance
       Properties:
           Monitoring: true
@@ -67,7 +72,7 @@ Resources:
           InstanceType: t2.micro
           Tags:
             - Key: Name
-              Value: Dockerbuilder01
+              Value: MasterInstance
           SecurityGroupIds:
           - !Ref DockerManagerSG
           SubnetId:
@@ -93,8 +98,7 @@ Resources:
                       ./build-deb.sh
                       sudo apt-get -y install ./build/amazon-efs-utils*deb
                       mkdir /home/EFS
-                      sudo mount -t efs ${EFS}:/ /home/EFS
-                      
+                      sudo mount -t efs ${EFS}:/ /home/EFS                      
                       mkdir /home/docker
                       cd /home/docker
                       git clone https://github.com/Yannickvwee/dockerdeploy-coviddashboard.git
@@ -108,10 +112,45 @@ Resources:
                           Fn::Sub:
                               - ${EFSStack}:EFS
                               - EFSStack: !Ref EFSStack
-
-
-                        
-
-
-
-
+  WorkerInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+        Monitoring: true
+        KeyName: !Ref SSHkey
+        ImageId:  ami-0bcc094591f354be2
+        InstanceType: t2.micro
+        Tags:
+            - Key: Name
+              Value: WorkerInstance
+        SecurityGroupIds:
+          - !Ref DockerManagerSG
+        SubnetId:
+              Fn::ImportValue:
+                  Fn::Sub:
+                    - ${VPCStack}:FirstSubnet
+                    - VPCStack: !Ref VPCStack
+        UserData:
+          Fn::Base64:
+            Fn::Sub:
+                - |
+                    #!bin/bash
+                    apt-get -y update
+                    apt-get -y update
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+                    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+                    apt-get -y update
+                    apt-get -y install docker-ce docker-ce-cli containerd.io docker-compose git
+                    mkdir /tmp/efs-utils
+                    cd /tmp/efs-utils
+                    git clone https://github.com/aws/efs-utils
+                    cd efs-utils
+                    sudo apt-get -y install binutils
+                    ./build-deb.sh
+                    sudo apt-get -y install ./build/amazon-efs-utils*deb
+                    mkdir /home/EFS
+                    sudo mount -t efs ${EFS}:/ /home/EFS
+                - EFS:
+                    Fn::ImportValue:
+                        Fn::Sub:
+                            - ${EFSStack}:EFS
+                            - EFSStack: !Ref EFSStack

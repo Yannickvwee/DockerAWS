@@ -1,0 +1,226 @@
+Description: An empty VPC (10.0.0.0/16) with one (public) subnet (/24) with internet gateway and routing table that allows full interaction between subnet and outside world.
+Parameters:
+  VPCCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC.
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for public subnet 1
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for public subnet 2
+    Type: String
+    Default: 10.0.2.0/24
+
+  PrivateSubnet1CIDR:
+    Description: Please enter the IP range (CIDR notation) for private subnet 1
+    Type: String
+    Default: 10.0.51.0/24
+
+  PrivateSubnet2CIDR:
+    Description: Please enter the IP range (CIDR notation) for private subnet 2
+    Type: String
+    Default: 10.0.52.0/24
+
+  AvailabilityZone1:
+    Description: Please enter the name of the first Availability Zone.
+    Type: String
+    Default: us-east-1a
+
+  AvailabilityZone2:
+    Description: Please enter the name of the first Availability Zone.
+    Type: String
+    Default: us-east-1b
+
+Resources:
+  # We need a VPC.
+  MyBaseVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VPCCIDR
+      EnableDnsHostnames: true
+      Tags: # Good practice is to add tags!
+        - Key: Name
+          Value: MyBaseVPC
+
+  # Define internet gateway to allow access to the "outside world"
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: InternetGateway
+
+  # Connect internet gateway to VPC
+  MyBaseVPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref MyBaseVPC
+
+  # Define two (public) subnets on the /24 domain that automatically
+  # assigns all instances a public ip on launch
+  FirstSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PublicSubnet1CIDR
+      AvailabilityZone: !Ref AvailabilityZone1
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref MyBaseVPC
+      Tags:
+        - Key: Name
+          Value: FirstSubnet
+
+  SecondSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PublicSubnet2CIDR
+      AvailabilityZone: !Ref AvailabilityZone2
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref MyBaseVPC
+      Tags:
+        - Key: Name
+          Value: SecondSubnet
+
+  # Add a routing table (and route) to the VPC to route all traffic
+  # via the internet gateway
+  FirstRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyBaseVPC
+      Tags:
+        - Key: Name
+          Value: FirstRouteTable
+
+  # Default route to the internet gateway
+  FirstDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref FirstRouteTable
+
+  # Associate routing table to subnets
+  SubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref FirstRouteTable
+      SubnetId: !Ref FirstSubnet
+
+  SecondSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref FirstRouteTable
+      SubnetId: !Ref SecondSubnet
+
+  # Define two (private) subnets on the /24 domain
+  FirstPrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      AvailabilityZone: !Ref AvailabilityZone1
+      VpcId: !Ref MyBaseVPC
+      Tags:
+        - Key: Name
+          Value: FirstPrivateSubnet
+
+  SecondPrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      AvailabilityZone: !Ref AvailabilityZone2
+      VpcId: !Ref MyBaseVPC
+      Tags:
+        - Key: Name
+          Value: SecondPrivateSubnet
+    
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTP-Allow
+      VpcId: !Ref MyBaseVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+  
+  EFSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTP-Allow
+      VpcId: !Ref MyBaseVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 2049
+        ToPort: 2049
+        CidrIp: 0.0.0.0/0
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+
+# Define outputs so values can be imported in another template
+Outputs:
+  VPCRef:
+    Description: Reference to the VPC
+    Value: !Ref MyBaseVPC
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", VPC ] ] # Fancy way of making the exported variable called "MyBase:VPC"
+  VPCGatewayAttachmentRef:
+    Description: Reference to the VPC gateway attachment
+    Value: !Ref MyBaseVPCGatewayAttachment
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", MyBaseVPCGatewayAttachment ] ]
+  FirstRouteTableRef:
+    Description: Reference to the VPC route table
+    Value: !Ref FirstRouteTable
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", FirstRouteTable ] ]
+  MyFirstSubnetRef:
+    Description: Reference to my first (public) subnet
+    Value: !Ref FirstSubnet
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", FirstSubnet ] ]
+  MySecondSubnetRef:
+    Description: Reference to my second (public) subnet
+    Value: !Ref SecondSubnet
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", SecondSubnet ] ]
+  FirstPrivateSubnetRef:
+    Description: Reference to my first (private) subnet
+    Value: !Ref FirstPrivateSubnet
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", FirstPrivateSubnet ] ]
+  SecondPrivateSubnetRef:
+    Description: Reference to my second (private) subnet
+    Value: !Ref SecondPrivateSubnet
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", SecondPrivateSubnet ] ]
+  AvailabilityZone1Ref:
+    Description: Reference to Availability Zone 1
+    Value: !Ref AvailabilityZone1
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", AvailabilityZone1 ] ]
+  AvailabilityZone2Ref:
+    Description: Reference to Availability Zone 2
+    Value: !Ref AvailabilityZone2
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", AvailabilityZone2 ] ]
+  SecurityGroupRef:
+    Description: Reference to SecurityGroup
+    Value: !Ref SecurityGroup
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", SecurityGroup ] ]
+  EFSSecurityGroup:
+    Description: Reference to EFSSecurityGroup
+    Value: !Ref EFSSecurityGroup
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", EFSSecurityGroup ] ]

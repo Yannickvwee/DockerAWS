@@ -1,0 +1,88 @@
+Parameters:
+
+    VPCStack:
+        Description: VPCStack name
+        Type: String
+        Default: VPCStack
+
+Resources:
+
+    EFSSG:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: EFS Security Group
+            GroupName: !Join [ "-", [ !Ref "AWS::StackName", EFSSG ] ]
+            SecurityGroupEgress:
+              - CidrIp: 0.0.0.0/0
+                Description : all outbound traffic OK
+                FromPort: -1
+                IpProtocol: -1
+                ToPort: -1
+            SecurityGroupIngress:
+              - CidrIp: 10.0.0.0/16
+                Description: Inbound EFS traffic
+                FromPort: 2049
+                IpProtocol: tcp
+                ToPort: 2049
+            VpcId:       
+                Fn::ImportValue:
+                    Fn::Sub:
+                        - ${VPCStack}:VPC
+                        - VPCStack: !Ref VPCStack
+
+    EFS:        
+        Type: AWS::EFS::FileSystem
+        Properties: 
+            BackupPolicy: 
+                Status: DISABLED
+            Encrypted: False
+            PerformanceMode: generalPurpose
+            ProvisionedThroughputInMibps: 5
+            ThroughputMode: provisioned
+
+
+    MountTarget:
+        Type: AWS::EFS::MountTarget
+        Properties: 
+            FileSystemId: !Ref EFS
+            SecurityGroups: 
+            - !Ref EFSSG
+            SubnetId: 
+                Fn::ImportValue:
+                    Fn::Sub:
+                        - ${VPCStack}:FirstSubnet
+                        - VPCStack: !Ref VPCStack
+
+    MountTarget1:
+        Type: AWS::EFS::MountTarget
+        Properties: 
+            FileSystemId: !Ref EFS
+            SecurityGroups: 
+            - !Ref EFSSG
+            SubnetId: 
+                Fn::ImportValue:
+                    Fn::Sub:
+                        - ${VPCStack}:SecondSubnet
+                        - VPCStack: !Ref VPCStack
+
+Outputs:
+    EFSRef:
+        Description: Reference to the EFS
+        Value: !Ref EFS
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", EFS ] ]
+
+    MountTargetRef:
+        Description: Reference to the MountTarget
+        Value: !Ref MountTarget
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", MountTarget ] ]
+
+
+    EFSSGRef:
+        Description: Reference to the EFSSG
+        Value: !Ref EFSSG
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", EFSSG ] ]
+
+
