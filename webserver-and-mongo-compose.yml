@@ -1,0 +1,12 @@
+version: "3.3"
+services:
+  nginx:
+    build:
+      context: .
+    ports:
+      - "80:80"
+  netapp:
+    build:
+      context: ./netapp/master
+    ports:
+      - "5000:80"
