@@ -100,35 +100,6 @@ Resources:
                             - ${EFSStack}:EFS
                             - EFSStack: !Ref EFSStack
 
-    DBServer:
-        Type: AWS::EC2::Instance
-        Properties:
-            Monitoring: true
-            KeyName: !Ref SSHkey
-            ImageId:  ami-0bcc094591f354be2
-            InstanceType: t2.micro
-            Tags:
-              - Key: Name
-                Value: MongoDB
-            SecurityGroupIds:
-            - !Ref DatabaseSG
-            SubnetId:
-                Fn::ImportValue:
-                    Fn::Sub:
-                    - ${VPCStack}:FirstSubnet
-                    - VPCStack: !Ref VPCStack
-            UserData:
-                Fn::Base64: !Sub |
-                    #!/bin/bash
-                    apt -y update
-                    sudo apt-get install gnupg -y
-                    wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | sudo apt-key add -
-                    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu bionic/mongodb-org/4.4 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-4.4.list
-                    apt-get -y update
-                    sudo apt-get install -y mongodb-org
-                    sudo sed -i 's/127.0.0.1/0.0.0.0/' /etc/mongod.conf
-                    systemctl start mongod 
-
 Outputs:
     WSGRef:
         Description: Reference to the WebserverSG

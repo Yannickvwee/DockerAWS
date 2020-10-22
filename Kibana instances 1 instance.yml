@@ -263,10 +263,6 @@ Resources:
                                     - ${EFSStack}:EFS
                                     - EFSStack: !Ref EFSStack
 
-
-
-
-
 Outputs:
     KSGRef:
         Description: Reference to the KibanaSG
