@@ -1,0 +1,283 @@
+Parameters:
+
+    SSHkey:
+        Description: Select used keypair
+        Type: AWS::EC2::KeyPair::KeyName
+
+    VPCStack:
+        Description: Name of the VPCStack used.
+        Type: String
+        Default: VPCStack
+
+    AccesKey:
+        Description: acces key id
+        Type: String
+
+    SecretKey:
+        Description: secret_acces_key
+        Type: String
+
+
+    SessionToken:
+        Description: session_token
+        Type: String
+
+    PrivateIp:
+        Description: Ip for server
+        Type: String
+        Default: 10.0.1.11
+
+    EFSStack:
+        Description: EFS stack name
+        Type: String
+        Default: EFSStack
+
+Resources:
+
+    KibanaSG:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: Webserver Security Group
+            GroupName: !Join [ "-", [ !Ref "AWS::StackName", KibanaSG ] ]
+            SecurityGroupEgress:
+              - CidrIp: 0.0.0.0/0
+                Description : all outbound traffic OK
+                FromPort: -1
+                IpProtocol: -1
+                ToPort: -1
+            SecurityGroupIngress:
+              - CidrIp: 0.0.0.0/0
+                Description: inbound kibana traffic
+                FromPort: 5601
+                IpProtocol: tcp
+                ToPort: 5601
+              - CidrIp: 0.0.0.0/0
+                Description: inbound kibana traffic
+                FromPort: 5601
+                IpProtocol: udp
+                ToPort: 5601
+              - CidrIp: 0.0.0.0/0
+                Description: Elastisearch traffic
+                FromPort: 9200
+                IpProtocol: udp
+                ToPort: 9200
+              - CidrIp: 0.0.0.0/0
+                FromPort: 9200
+                IpProtocol: tcp
+                ToPort: 9200
+              - CidrIp: 0.0.0.0/0
+                Description: ssh
+                FromPort: 22
+                IpProtocol: tcp
+                ToPort: 22
+              - CidrIp: 127.0.0.1/32
+                Description: Loopbacktraffic
+                FromPort: -1
+                IpProtocol: -1
+                ToPort: -1
+            VpcId:       
+                Fn::ImportValue:
+                    Fn::Sub:
+                        - ${VPCStack}:VPC
+                        - VPCStack: !Ref VPCStack
+
+
+
+    Kibana:
+        Type : AWS::EC2::Instance
+        Properties:
+            Monitoring: true
+            KeyName: !Ref SSHkey
+            ImageId: ami-0bcc094591f354be2
+            InstanceType: t2.medium
+            PrivateIpAddress: !Ref PrivateIp
+            SecurityGroupIds:
+                - !Ref KibanaSG
+            SubnetId:
+                Fn::ImportValue:
+                    Fn::Sub:
+                        - ${VPCStack}:FirstSubnet
+                        - VPCStack: !Ref VPCStack
+            UserData:
+                Fn::Base64:
+                    Fn::Sub:
+                        - |
+                            #!bin/bash
+                            sudo -i
+                            wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
+                            echo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-7.x.list
+                            apt-get -y update && apt-get -y install elasticsearch
+                            mv /etc/elasticsearch/elasticsearch.yml /etc/elasticsearch/elasticsearch.old.yml
+                            touch /etc/elasticsearch/elasticsearch.yml
+                            cat << EOF > /etc/elasticsearch/elasticsearch.yml
+                                path.data: /var/lib/elasticsearch
+                                path.logs: /var/log/elasticsearch
+                                network.host: "localhost" 
+                                http.port: 9200 
+                            EOF
+                            update-rc.d elasticsearch defaults 95 10
+                            apt-get -y install default-jre
+                            java -version
+                            sed -i 's/-Xms1g/-Xms256m/' /etc/elasticsearch/jvm.options
+                            sed -i 's/-Xmx1g/-Xmx256m/' /etc/elasticsearch/jvm.options
+                            service elasticsearch start
+                            apt-get -y install && apt-get install -y nfs-common
+                            mkdir /tmp/efs-utils
+                            cd /tmp/efs-utils
+                            git clone https://github.com/aws/efs-utils
+                            sudo apt-get -y install binutils
+                            cd efs-utils
+                            ./build-deb.sh
+                            sudo apt-get -y install ./build/amazon-efs-utils*deb
+                            mkdir /var/log/sharedlogs
+                            sudo mount -t efs ${EFS}:/ /var/log/sharedlogs
+                            curl http://localhost:9200
+                            apt-get -y install logstash
+                            touch /etc/logstash/conf.d/nginx.conf
+                            cat << EOF > /etc/logstash/conf.d/nginx.conf
+                            input {
+                            file {
+                            path => "/var/log/sharedlogs/**/*"
+                            }
+                            }
+
+                            filter {
+                            grok {
+                            # Match nginx headers
+                            match => [ "message", "%{GREEDYDATA}\|%{GREEDYDATA}%{INT}m%{GREEDYDATA:host_requested}%{SPACE} %{IP:client_ip}%{SPACE}\-%{SPACE}\-%{SPACE}\[%{HTTPDATE:timestamp}\]%{GREEDYDATA:body}"]
+                            }
+
+                            grok {
+                            # Match a standard HTTP request
+                            match => ["body", " \"(?:%{WORD:verb} %{NOTSPACE:request}(?: HTTP/%{NUMBER:httpversion})?|-)\" %{NUMBER:response} (?:-|%{NUMBER:bytes})%{SPACE}\"%{NOTSPACE:referrer}\"%{SPACE}%{GREEDYDATA:user_agent}"]
+                            # Match port scans
+                            match => ["body", " \"%{GREEDYDATA:payload}\" %{NUMBER:response} (?:-|%{NUMBER:bytes})%{SPACE}\"%{NOTSPACE:referrer}\"%{SPACE}%{GREEDYDATA:user_agent}"]
+                            }
+
+                            # If the message is parsed correctly, remove it
+                            if "_grokparsefailure" not in [tags] {
+                            mutate {        
+                            remove_field => ["message"]	
+                            }
+                            }
+                            date {
+                            locale => "en"
+                            timezone => "America/New_York"
+                            match => [ "timestamp" , "dd/MMM/yyyy:HH:mm:ss Z" ]
+                            }
+                            mutate {	
+                            remove_field => ["body"]
+                            }
+                            geoip {
+                            source => "client_ip"
+                            }
+                            }
+
+                            output {
+                            elasticsearch { 
+                            hosts => "localhost:9200"
+                            }
+                            }
+                            EOF
+                            sed -i 's/-Xms1g/-Xms256m/' /etc/logstash/jvm.options
+                            sed -i 's/-Xmx1g/-Xmx256m/' /etc/logstash/jvm.options
+                            service logstash start
+                            curl -XGET 'localhost:9200/_cat/indices?v&pretty'
+                            apt-get -y install kibana
+                            mv /etc/kibana/kibana.yml /etc/kibana/kibana.old.yml
+                            touch /etc/kibana/kibana.yml
+                            cat << EOF > /etc/kibana/kibana.yml
+                                server.port: 5601
+                                server.host: "${Prip}"
+                                elasticsearch.hosts: ["http://localhost:9200"]
+                            EOF
+                            service kibana start
+                            sleep 2m
+                            curl -L -O https://artifacts.elastic.co/downloads/beats/metricbeat/metricbeat-7.9.2-amd64.deb
+                            sudo dpkg -i metricbeat-7.9.2-amd64.deb
+                            mv /etc/metricbeat/metricbeat.yml /etc/metricbeat/metricbeat.old.yml
+                            touch /etc/metricbeat/metricbeat.yml
+                            cat << EOF > /etc/metricbeat/metricbeat.yml
+                            metricbeat.config.modules:
+                                path: SEDINSERT/modules.d/*.yml
+                                reload.enabled: true
+                            setup.template.settings:
+                                index.number_of_shards: 1
+                                index.codec: best_compression
+                            setup.kibana:
+                                host: "${Prip}"
+                            output.elasticsearch:
+                                hosts: ["localhost:9200"]
+                            processors:
+                                - add_host_metadata: ~
+                                - add_cloud_metadata: ~
+                                - add_docker_metadata: ~
+                                - add_kubernetes_metadata: ~
+                            logging.level: debug
+                            logging.selector: ["*"]
+                            EOF
+                            sed -i 's/SEDINSERT/${!path.config}/' /etc/metricbeat/metricbeat.yml
+                            metricbeat modules enable aws
+                            cat << EOF > /etc/metricbeat/modules.d/aws.yml
+                            # Module: aws
+                            # Docs: https://www.elastic.co/guide/en/beats/metricbeat/7.9/metricbeat-module-aws.html
+                            - module: aws
+                                period: 1m
+                                metricsets:
+                                    - cloudwatch
+                                metrics:
+                                    - namespace: AWS/EC2
+                                    name: ["CPUUtilization", "DiskWriteOps"]
+                                    resource_type: ec2:instance
+                                    dimensions:
+                                        - name: instanceId
+                                        value: i-1234
+                                    statistic: ["average", "maximum"]
+                                regions:
+                                  - us-east-1
+                                acces_key_id: 'SEDINSERT1'
+                                secret_access_key: 'SEDINSERT2'
+                                session_token: 'SEDINSERT3'
+                            - module: aws
+                                period: 1m
+                                metricsets:
+                                  - ec2
+                                regions:
+                                  - us-east-1
+                                acces_key_id: 'SEDINSERT1'
+                                secret_access_key: 'SEDINSERT2'
+                                session_token: 'SEDINSERT3'
+                            EOF
+                            sed -i 's/SEDINSERT1/${access_key_id}/' /etc/metricbeat/modules.d/aws.yml
+                            sed -i 's/SEDINSERT2/${secret_access_key}/' /etc/metricbeat/modules.d/aws.yml
+                            sed -i 's,'SEDINSERT3','"${session_token}"',' "/etc/metricbeat/modules.d/aws.yml"
+                            metricbeat setup
+                            service metricbeat start
+                        - access_key_id: !Ref AccesKey
+                          secret_access_key: !Ref SecretKey
+                          session_token: !Ref SessionToken
+                          Prip: !Ref PrivateIp
+                          EFS:
+                            Fn::ImportValue:
+                                Fn::Sub:
+                                    - ${EFSStack}:EFS
+                                    - EFSStack: !Ref EFSStack
+
+
+
+
+
+Outputs:
+    KSGRef:
+        Description: Reference to the KibanaSG
+        Value: !Ref KibanaSG
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", KibanaSG ] ]
+
+    KSRef:
+        Description: Reference to the Kibana server
+        Value: !Ref Kibana
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", Kibana ] ]
+
+

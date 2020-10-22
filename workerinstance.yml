@@ -1,0 +1,143 @@
+Parameters:
+
+  SSHkey:
+    Description: Select used keypair
+    Type: AWS::EC2::KeyPair::KeyName
+
+  VPCStack:
+    Description: Name of the VPCStack used.
+    Type: String
+    Default: VPCStack
+
+  EFSStack:
+    Description: Name of the EFS Stack.
+    Type: String
+    Default: EFSStack
+
+Resources:
+
+
+  DockerNodeSG:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: DockerNodeSG
+        GroupName: !Join [ "-", [ !Ref "AWS::StackName", DNSG ] ]
+        SecurityGroupEgress:
+          - CidrIp: 0.0.0.0/0
+            Description: all outbound traffic OK
+            FromPort: -1
+            IpProtocol: -1
+            ToPort: -1
+        SecurityGroupIngress:
+          - CidrIp: 0.0.0.0/0
+            Description: ssh
+            FromPort: 22
+            IpProtocol: tcp
+            ToPort: 22
+          - CidrIp: 0.0.0.0/0
+            Description: nginx
+            FromPort: 80
+            IpProtocol: tcp
+            ToPort: 80
+          - CidrIp: 0.0.0.0/0
+            Description: netapp
+            FromPort: 5000
+            IpProtocol: tcp
+            ToPort: 5000
+        VpcId:
+          Fn::ImportValue: 
+              Fn::Sub:
+                - ${VPCStack}:VPC
+                - VPCStack: !Ref VPCStack
+
+
+  Webserver:
+    Type: AWS::EC2::Instance
+    Properties:
+        Monitoring: true
+        KeyName: !Ref SSHkey
+        ImageId:  ami-0bcc094591f354be2
+        InstanceType: t2.micro
+        Tags:
+            - Key: Name
+              Value: WorkerInstance
+        SecurityGroupIds:
+          - !Ref DockerNodeSG
+        SubnetId:
+              Fn::ImportValue:
+                  Fn::Sub:
+                    - ${VPCStack}:FirstSubnet
+                    - VPCStack: !Ref VPCStack
+        UserData:
+          Fn::Base64:
+            Fn::Sub:
+                - |
+                    #!bin/bash
+                    apt-get -y update
+                    apt-get -y update
+                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+                    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+                    apt-get -y update
+                    apt-get -y install docker-ce docker-ce-cli containerd.io docker-compose git
+                    mkdir /tmp/efs-utils
+                    cd /tmp/efs-utils
+                    git clone https://github.com/aws/efs-utils
+                    cd efs-utils
+                    sudo apt-get -y install binutils
+                    ./build-deb.sh
+                    sudo apt-get -y install ./build/amazon-efs-utils*deb
+                    mkdir /home/EFS
+                    sudo mount -t efs ${EFS}:/ /home/EFS
+                    mkdir /home/EFS/$HOSTNAME
+                    mkdir /home/docker
+                    cd /home/docker
+                    git clone https://github.com/Yannickvwee/dockerdeploy-coviddashboard.git
+                    cd dockerdeploy-coviddashboard
+                    sh swarmworker.sh /home/EFS/swarmtoken
+                - EFS:
+                    Fn::ImportValue:
+                        Fn::Sub:
+                            - ${EFSStack}:EFS
+                            - EFSStack: !Ref EFSStack
+
+    DBServer:
+        Type: AWS::EC2::Instance
+        Properties:
+            Monitoring: true
+            KeyName: !Ref SSHkey
+            ImageId:  ami-0bcc094591f354be2
+            InstanceType: t2.micro
+            Tags:
+              - Key: Name
+                Value: MongoDB
+            SecurityGroupIds:
+            - !Ref DatabaseSG
+            SubnetId:
+                Fn::ImportValue:
+                    Fn::Sub:
+                    - ${VPCStack}:FirstSubnet
+                    - VPCStack: !Ref VPCStack
+            UserData:
+                Fn::Base64: !Sub |
+                    #!/bin/bash
+                    apt -y update
+                    sudo apt-get install gnupg -y
+                    wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | sudo apt-key add -
+                    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu bionic/mongodb-org/4.4 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+                    apt-get -y update
+                    sudo apt-get install -y mongodb-org
+                    sudo sed -i 's/127.0.0.1/0.0.0.0/' /etc/mongod.conf
+                    systemctl start mongod 
+
+Outputs:
+    WSGRef:
+        Description: Reference to the WebserverSG
+        Value: !Ref DockerNodeSG
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", WebserverSG ] ]
+
+    WSRef:
+        Description: Reference to the Webserver
+        Value: !Ref Webserver
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", Webserver ] ]

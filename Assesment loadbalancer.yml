@@ -1,0 +1,130 @@
+Parameters:
+
+    VPCStack:
+        Description: Name of the VPCStack used.
+        Type: String
+        Default: VPCStack
+
+    WebserverStack:
+        Description: Name of the stack with the webserver for the autoscaling group.
+        Type: String
+        Default: WebserverStack
+
+Resources:
+
+
+    WebserverLoadbalancer:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        Properties:
+            IpAddressType: ipv4
+            Name: WebserverLoadbalancer
+            Scheme: internet-facing
+            SecurityGroups:
+                - Fn::ImportValue:
+                    Fn::Sub:
+                        - ${WebserverStack}:WebserverSG
+                        - WebserverStack: !Ref WebserverStack
+            Subnets:
+                - Fn::ImportValue:
+                    Fn::Sub:
+                        - ${VPCStack}:FirstSubnet
+                        - VPCStack: !Ref VPCStack
+                - Fn::ImportValue:
+                    Fn::Sub:
+                        - ${VPCStack}:SecondSubnet
+                        - VPCStack: !Ref VPCStack
+
+
+    WebserverTargetGroup:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+            Name: CovidDashboardtargetgroup
+            Port: 80
+            Protocol: HTTP
+            TargetType: instance
+#            Targets:
+#            - Id: !Ref WebserverAutoscalingGroup
+            VpcId:
+                Fn::ImportValue:
+                    Fn::Sub:
+                        - ${VPCStack}:VPC
+                        - VPCStack: !Ref VPCStack
+
+    WebserverListener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        Properties:
+            DefaultActions:
+            - Type: forward
+              TargetGroupArn: !Ref WebserverTargetGroup
+            LoadBalancerArn: !Ref WebserverLoadbalancer
+            Port: 80
+            Protocol: HTTP
+
+
+
+    WebserverAutoscalingGroup:
+        Type: AWS::AutoScaling::AutoScalingGroup
+        Properties:
+            AutoScalingGroupName: !Join [ "-", [ !Ref "AWS::StackName", WebserverScalingGroup ] ]
+            AvailabilityZones:
+            - Fn::ImportValue:
+                Fn::Sub:
+                    - ${VPCStack}:AvailabilityZone1
+                    - VPCStack: !Ref VPCStack
+            - Fn::ImportValue:
+                Fn::Sub:
+                    - ${VPCStack}:AvailabilityZone2
+                    - VPCStack: !Ref VPCStack
+            VPCZoneIdentifier:
+            - Fn::ImportValue:
+                Fn::Sub:
+                    - ${VPCStack}:FirstSubnet
+                    - VPCStack: !Ref VPCStack
+            - Fn::ImportValue:
+                Fn::Sub:
+                    - ${VPCStack}:SecondSubnet
+                    - VPCStack: !Ref VPCStack
+            Cooldown: 60
+            DesiredCapacity: 3
+            MaxSize: 5
+            MinSize: 1
+            HealthCheckGracePeriod: 300
+            HealthCheckType: EC2
+            InstanceId: 
+                Fn::ImportValue:
+                    Fn::Sub:
+                        - ${WebserverStack}:Webserver
+                        - WebserverStack: !Ref WebserverStack
+            TargetGroupARNs:
+                - !Ref WebserverTargetGroup
+            TerminationPolicies: 
+                - ClosestToNextInstanceHour
+                - OldestLaunchConfiguration
+            
+
+
+Outputs:
+    TGRef:
+        Description: Reference to the WebserverTargetGroup
+        Value: !Ref WebserverTargetGroup
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", WebserverTargetGroup ] ]
+
+    ALBRef:
+        Description: Reference to the WebserverLoadbalancer
+        Value: !Ref WebserverLoadbalancer
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", WebserverLoadbalancer ] ]
+
+    ASGRef:
+        Description: Reference to the WebserverAutoscalingGroup
+        Value: !Ref WebserverAutoscalingGroup
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", WebserverAutoscalingGroup ] ]
+
+    LRef:
+        Description: Reference to the WebserverListener
+        Value: !Ref WebserverListener
+        Export:
+            Name: !Join [ ":", [ !Ref "AWS::StackName", WebserverListener ] ]
+            

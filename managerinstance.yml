@@ -13,21 +13,21 @@ Parameters:
     Type: String
     Default: EFSStack
 
-    PrivateIp:
-      Description: Ip for server
-      Type: String
-      Default: 10.0.1.10
+  PrivateIp:
+    Description: Ip for server
+    Type: String
+    Default: 10.0.1.10
 
 
 Resources:
-  ECR:
-        Type: AWS::ECR::Repository
-        Properties: 
-            ImageTagMutability: MUTABLE
-            RepositoryName: Coronadashboard
-            Tags:
-                - Key: keyname
-                  Value: Coronadashboard
+  # ECR:
+  #       Type: AWS::ECR::Repository
+  #       Properties: 
+  #           ImageTagMutability: MUTABLE
+  #           RepositoryName: Coronadashboard
+  #           Tags:
+  #               - Key: keyname
+  #                 Value: Coronadashboard
 
   DockerManagerSG:
     Type: AWS::EC2::SecurityGroup
@@ -68,14 +68,85 @@ Resources:
           ToPort: 8000
         - CidrIp: 0.0.0.0/0
           Description: swarm
-          FromPort: 2377
+          FromPort: 2376
           IpProtocol: tcp
           ToPort: 2377
+        - CidrIp: 0.0.0.0/0
+          Description: swarm
+          FromPort: 7946
+          IpProtocol: tcp
+          ToPort: 7946
+        - CidrIp: 0.0.0.0/0
+          Description: swarm
+          FromPort: 7946
+          IpProtocol: udp
+          ToPort: 7946
       VpcId:
         Fn::ImportValue: 
             Fn::Sub:
               - ${VPCStack}:VPC
               - VPCStack: !Ref VPCStack
+
+  DatabaseSG:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+          GroupDescription: Database Security Group
+          GroupName: !Join [ "-", [ !Ref "AWS::StackName", DBSG ] ]
+          SecurityGroupEgress:
+            - CidrIp: 0.0.0.0/0
+              Description: all outbound traffic OK
+              FromPort: -1
+              IpProtocol: -1
+              ToPort: -1
+          SecurityGroupIngress:
+            - CidrIp: 0.0.0.0/0
+              Description: ssh
+              FromPort: 22
+              IpProtocol: tcp
+              ToPort: 22
+            - CidrIp: 0.0.0.0/0
+              Description: ssh
+              FromPort: 27017
+              IpProtocol: tcp
+              ToPort: 27017
+            - CidrIp: 0.0.0.0/0
+              Description: icmp
+              FromPort: -1
+              IpProtocol: ICMP
+              ToPort: -1
+          VpcId:
+              Fn::ImportValue:
+                  Fn::Sub:
+                      - ${VPCStack}:VPC
+                      - VPCStack: !Ref VPCStack
+  DBServer:
+      Type: AWS::EC2::Instance
+      Properties:
+          Monitoring: true
+          KeyName: !Ref SSHkey
+          ImageId:  ami-0bcc094591f354be2
+          InstanceType: t2.micro
+          Tags:
+            - Key: Name
+              Value: MongoDB
+          SecurityGroupIds:
+          - !Ref DatabaseSG
+          SubnetId:
+              Fn::ImportValue:
+                  Fn::Sub:
+                  - ${VPCStack}:FirstSubnet
+                  - VPCStack: !Ref VPCStack
+          UserData:
+              Fn::Base64: !Sub |
+                  #!/bin/bash
+                  apt -y update
+                  sudo apt-get install gnupg -y
+                  wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | sudo apt-key add -
+                  echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu bionic/mongodb-org/4.4 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-4.4.list
+                  apt-get -y update
+                  sudo apt-get install -y mongodb-org
+                  sudo sed -i 's/127.0.0.1/0.0.0.0/' /etc/mongod.conf
+                  systemctl start mongod 
 
   MasterInstance:
       Type: AWS::EC2::Instance
@@ -119,55 +190,20 @@ Resources:
                       git clone https://github.com/Yannickvwee/dockerdeploy-coviddashboard.git
                       cd dockerdeploy-coviddashboard
                       sh swarmmanager.sh /home/EFS/swarmtoken
+                      apt install -y gnupg2 pass
+                      docker login -u yannickvw -p dockerCode391
+                      sh build.sh
+                      docker service create --mode global --publish published=80,target=80 --mount type=bind,source=/home/EFS/"{{.Node.Hostname}}",destination=/var/log/nginx --name=coviddashboard_nginx yannickvw/coviddashboard_nginx:latest
+                      docker service create --mode global --publish published=5000,target=80  --name=coviddashboard_netapp yannickvw/coviddashboard_netapp:latest
                       docker volume create portainer_data
                       docker run -d -p 8000:8000 -p 9000:9000 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
-                      docker-compose build
-                      docker-compose up
-                      apt install -y awscli
+                      apt -y install mongo-tools mongodb-clients
+                      cd /home/docker/dockerdeploy-coviddashboard/nginx/master
+                      grep -oP '(?<=data =).*?(?=;)' index.html > data.json
+                      mongoimport --host ${DBServer.PrivateIp} --port 27017 --db COVIDDashboard --collection inventory --authenticationDatabase admin --drop --file ./data.json --jsonArray
+                            
                   - EFS:
                       Fn::ImportValue:
                           Fn::Sub:
                               - ${EFSStack}:EFS
                               - EFSStack: !Ref EFSStack
-  WorkerInstance:
-    Type: AWS::EC2::Instance
-    Properties:
-        Monitoring: true
-        KeyName: !Ref SSHkey
-        ImageId:  ami-0bcc094591f354be2
-        InstanceType: t2.micro
-        Tags:
-            - Key: Name
-              Value: WorkerInstance
-        SecurityGroupIds:
-          - !Ref DockerManagerSG
-        SubnetId:
-              Fn::ImportValue:
-                  Fn::Sub:
-                    - ${VPCStack}:FirstSubnet
-                    - VPCStack: !Ref VPCStack
-        UserData:
-          Fn::Base64:
-            Fn::Sub:
-                - |
-                    #!bin/bash
-                    apt-get -y update
-                    apt-get -y update
-                    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
-                    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
-                    apt-get -y update
-                    apt-get -y install docker-ce docker-ce-cli containerd.io docker-compose git
-                    mkdir /tmp/efs-utils
-                    cd /tmp/efs-utils
-                    git clone https://github.com/aws/efs-utils
-                    cd efs-utils
-                    sudo apt-get -y install binutils
-                    ./build-deb.sh
-                    sudo apt-get -y install ./build/amazon-efs-utils*deb
-                    mkdir /home/EFS
-                    sudo mount -t efs ${EFS}:/ /home/EFS
-                - EFS:
-                    Fn::ImportValue:
-                        Fn::Sub:
-                            - ${EFSStack}:EFS
-                            - EFSStack: !Ref EFSStack
