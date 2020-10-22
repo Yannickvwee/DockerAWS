@@ -13,6 +13,12 @@ Parameters:
     Type: String
     Default: EFSStack
 
+    PrivateIp:
+      Description: Ip for server
+      Type: String
+      Default: 10.0.1.10
+
+
 Resources:
   ECR:
         Type: AWS::ECR::Repository
@@ -53,17 +59,17 @@ Resources:
         - CidrIp: 0.0.0.0/0
           Description: portainer
           FromPort: 9000
-          IpProtocol: -1
+          IpProtocol: tcp
           ToPort: 9000
         - CidrIp: 0.0.0.0/0
           Description: portainer2
           FromPort: 8000
-          IpProtocol: -1
+          IpProtocol: tcp
           ToPort: 8000
         - CidrIp: 0.0.0.0/0
           Description: swarm
           FromPort: 2377
-          IpProtocol: -1
+          IpProtocol: tcp
           ToPort: 2377
       VpcId:
         Fn::ImportValue: 
@@ -78,6 +84,7 @@ Resources:
           KeyName: !Ref SSHkey
           ImageId:  ami-0bcc094591f354be2
           InstanceType: t2.micro
+          PrivateIpAddress: !Ref PrivateIp
           Tags:
             - Key: Name
               Value: MasterInstance
