@@ -14,6 +14,14 @@ Parameters:
     Default: EFSStack
 
 Resources:
+  ECR:
+        Type: AWS::ECR::Repository
+        Properties: 
+            ImageTagMutability: MUTABLE
+            RepositoryName: Coronadashboard
+            Tags:
+                - Key: keyname
+                  Value: Coronadashboard
 
   DockerManagerSG:
     Type: AWS::EC2::SecurityGroup
@@ -108,6 +116,7 @@ Resources:
                       docker run -d -p 8000:8000 -p 9000:9000 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
                       docker-compose build
                       docker-compose up
+                      apt install -y awscli
                   - EFS:
                       Fn::ImportValue:
                           Fn::Sub:
