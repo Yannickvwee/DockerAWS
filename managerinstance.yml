@@ -192,11 +192,11 @@ Resources:
                       sh swarmmanager.sh /home/EFS/swarmtoken
                       apt install -y gnupg2 pass
                       docker login -u yannickvw -p dockerCode391
+                      docker volume create portainer_data
+                      docker run -d -p 8000:8000 -p 9000:9000 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
                       sh build.sh
                       docker service create --mode global --publish published=80,target=80 --mount type=bind,source=/home/EFS/"{{.Node.Hostname}}",destination=/var/log/nginx --name=coviddashboard_nginx yannickvw/coviddashboard_nginx:latest
                       docker service create --mode global --publish published=5000,target=80  --name=coviddashboard_netapp yannickvw/coviddashboard_netapp:latest
-                      docker volume create portainer_data
-                      docker run -d -p 8000:8000 -p 9000:9000 --name=portainer --restart=always -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce
                       apt -y install mongo-tools mongodb-clients
                       cd /home/docker/dockerdeploy-coviddashboard/nginx/master
                       grep -oP '(?<=data =).*?(?=;)' index.html > data.json
