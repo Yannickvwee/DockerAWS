@@ -2,7 +2,9 @@ Parameters:
 
   SSHkey:
     Description: Select used keypair
-    Type: AWS::EC2::KeyPair::KeyName
+    Type: string
+    Default: KeyPair
+
 
   VPCStack:
     Description: Name of the VPCStack used.
