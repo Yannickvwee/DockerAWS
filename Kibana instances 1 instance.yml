@@ -253,6 +253,26 @@ Resources:
                             sed -i 's,'SEDINSERT3','"${session_token}"',' "/etc/metricbeat/modules.d/aws.yml"
                             metricbeat setup
                             service metricbeat start
+
+                            apt-add-repository --yes --update ppa:ansible/ansible 
+                            apt-get -y install ansible
+                            echo "ANSIBLE_HOST_KEY_CHECKING = false" >>/etc/ansible.cfg
+                            cat << EOF > /etc/ansible/hosts
+                            [local]
+                            127.0.0.1 ansible_connection=local
+                            EOF
+                            sed -i 's/#host_key_checking = False/host_key_checking = false/' /etc/ansible/ansible.cfg
+                            mkdir /nginxlogs
+                            cat << EOF > ansiblefetchlogs.yml
+                            - hosts: local
+                              tasks:
+                                - name: copy logs
+                                  copy:
+                                    src: /var/log/sharedlogs/
+                                    dest: /nginxlogs/
+
+                            EOF
+                            ansible-playbook --u=root ansiblefetchlogs.yml
                         - access_key_id: !Ref AccesKey
                           secret_access_key: !Ref SecretKey
                           session_token: !Ref SessionToken
