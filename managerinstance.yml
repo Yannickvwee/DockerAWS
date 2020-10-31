@@ -1,8 +1,7 @@
 Parameters:
   SSHkey:
     Description: Select used keypair
-    Type: string
-    Default: KeyPair
+    Type: String
 
   VPCStack:
     Description: Name of the VPCStack used.
